@@ -23,6 +23,6 @@ To set up the project, follow these steps:
     ```
 
 # Run Flask and database
-export FLASK_APP=app.py
-python model/user.py
-flask run
+##export FLASK_APP=app.py
+##python model/user.py
+##flask run
