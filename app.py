@@ -4,57 +4,66 @@ from flask import request
 import sqlite3
 import os
 from pycpfcnpj import cpfcnpj
+from datetime import datetime,timedelta
 from email_validator import validate_email, EmailNotValidError
 app = Flask(__name__)
 import hashlib
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session,jsonify
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 @app.route('/calc',methods=['GET','POST'])
 def calc_page():
+    print(request.method)
     if request.method == 'POST':
-        num1 = request.form['num1']
-        num2 = request.form['num2']
-        operator = request.form['operator']
-        
+        data = request.get_json()
+        num1 = int(data['num1'])
+        num2 = int(data['num2'])
+        operator = data['operator']
         swicher = {
             'add': num1 + num2,
             'subtract': num1 - num2,
             'multiply': num1 * num2, 
-            'divide' : num1 / num2 if num2 != 0 else 'Invalid operator'
+            'divide' : num1 / num2 if num2 != 0 else 'cannot divide by zero',
         }
         result = swicher.get(operator, 'Invalid operator')
-        print(result)
-        return render_template('calc.html', result=result)
-        
+        return jsonify(result)
     return render_template('page.html', name='index')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        email = request.form['email']
-        senha = request.form['senha']
+      
+        if request.method == 'POST':
+            email = request.form['email']
+            senha = request.form['password']
 
-        # Comando SQL para buscar usuário pelo e-mail e senha
-        command = f"SELECT * FROM users WHERE email = '{email}' AND senha = '{senha}'"
+            command = f"SELECT * FROM users WHERE email = '{email}' AND password = '{senha}'"
 
-        # Executa o comando SQL para buscar usuário no banco de dados
-        user_data = database_select(command)
+            try:
+                connection = sqlite3.connect("database.db")
+                cursor = connection.cursor()
+                user_data =  cursor.execute(command).fetchone()
+                print(user_data)
+                connection.close()
+            except Exception as e:
+                print(e)
+                user_data = None
+            if user_data or user_data is not None:
+                session['logged_in'] = True
+                session['user_id'] = user_data[0]
+                session['user_hash'] = hashlib.sha256(os.urandom(24)).hexdigest()
+                date_time_login = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                date_time_expiration = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+                connection = sqlite3.connect("database.db")
+                cursor = connection.cursor()
+                cursor.execute(f"INSERT INTO login_sessions (user_id, data_hora_login, hash, data_hora_expiracao) VALUES ({session['user_id']}, '{date_time_login}', '{session['user_hash']}', '{date_time_expiration}')")
+                connection.commit()
+                connection.close()
+                
+                return f"Usuário logado com sucesso. Seu ID é {user_data[0]}, data de login: {date_time_login}, data de expiração: {date_time_expiration}, hash: {session['user_hash']}"
 
-        if user_data:
-            # Criação do hash para o login bem-sucedido
-            session['logged_in'] = True
-            session['user_id'] = user_data['id']
-            session['user_hash'] = hashlib.sha256(os.urandom(24)).hexdigest()
-
-            # Retorna para o usuário todas as informações do banco de dados
-            return f"Login bem-sucedido. Informações do usuário: {user_data}"
-        else:
-            return "E-mail ou senha incorretos."
-
-    return render_template('login.html', name='login')
+        return render_template('index.html', name='login')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -63,7 +72,7 @@ def register():
         cpf = request.form['cpf']
         email = request.form['email']
         whatsapp = request.form['whatsapp']
-        senha = request.form['senha']
+        password = request.form['senha']
         confirmar_senha = request.form['confirmar_senha']
 
         if 'foto' in request.files:
@@ -87,12 +96,12 @@ def register():
             return "Email inválido"
 
         # Verifica se as senhas conferem
-        if senha != confirmar_senha:
+        if password != confirmar_senha:
             return "Senhas não conferem"
 
         # Comando SQL para inserir os dados na tabela 'users'
-        command = f"""INSERT INTO users (nome, cpf, email, whatsapp, senha, foto) 
-                        VALUES ('{nome}', '{cpf}', '{email}', '{whatsapp}', '{senha}', '{foto_path}')"""
+        command = f"""INSERT INTO users (nome, cpf, email, whatsapp, password, foto) 
+                        VALUES ('{nome}', '{cpf}', '{email}', '{whatsapp}', '{password}', '{foto_path}')"""
 
         # Executa o comando SQL para inserção no banco de dados
         if database_insert(command):
