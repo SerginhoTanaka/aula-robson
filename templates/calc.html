@@ -10,11 +10,14 @@
 </head>
 
 <body>
-  <!-- Header with Logout Button -->
+  <!-- Header with Menu Button and Logout Button -->
   <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <a class="navbar-brand" href="#">Calculator</a>
     <div class="collapse navbar-collapse">
       <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('user_info') }}">Menu</a>
+        </li>
         <li class="nav-item">
           <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
         </li>

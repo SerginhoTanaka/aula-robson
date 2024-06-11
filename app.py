@@ -19,6 +19,30 @@ def index():
         return redirect(url_for('protected'))
     
     return render_template('index.html', name='login')
+@app.route('/user_info')
+def user_info():
+    user_id = session.get('user_id')
+    
+    if not user_id:
+        return redirect(url_for('login'))
+    
+    connection = sqlite3.connect("database.db")
+    cursor = connection.cursor()
+    cursor.execute("SELECT nome, cpf, email, whatsapp, foto FROM users WHERE id = ?", (user_id,))
+    user_data = cursor.fetchone()
+    connection.close()
+
+    if user_data:
+        user_info = {
+            "nome": user_data[0],
+            "cpf": user_data[1],
+            "email": user_data[2],
+            "whatsapp": user_data[3],
+            "foto": user_data[4]
+        }
+        return render_template('user_info.html', user=user_info)
+    else:
+        return "User not found"
 
 
 @app.route('/calc', methods=['GET', 'POST'])
