@@ -1,18 +1,21 @@
-from flask import Flask
-from flask import render_template
-from flask import request
+
 import sqlite3
 import os
 from pycpfcnpj import cpfcnpj
 from datetime import datetime,timedelta
 from email_validator import validate_email, EmailNotValidError
-app = Flask(__name__)
 import hashlib
-from flask import Flask, render_template, request, session,jsonify
+from flask import Flask, request, session, render_template, redirect, url_for
+
+from flask import jsonify
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+
+@app.route('/')
+def index():
+    return render_template('index.html', name='login')
 @app.route('/calc',methods=['GET','POST'])
 def calc_page():
     print(request.method)
@@ -31,39 +34,78 @@ def calc_page():
         return jsonify(result)
     return render_template('page.html', name='index')
 
+def generate_token():
+    return hashlib.sha256(os.urandom(24)).hexdigest()
+
+def validate_token(user_id, token):
+    connection = sqlite3.connect("database.db")
+    cursor = connection.cursor()
+    command = f"SELECT data_hora_expiracao FROM login_sessions WHERE user_id = ? AND hash = ?"
+    cursor.execute(command, (user_id, token))
+    session_data = cursor.fetchone()
+    connection.close()
+    if session_data:
+        expiration_time = datetime.strptime(session_data[0], "%Y-%m-%d %H:%M:%S")
+        if datetime.now() < expiration_time:
+            return True
+    return False
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-      
-        if request.method == 'POST':
-            email = request.form['email']
-            senha = request.form['password']
+    user_id = session.get('user_id')
+    token = session.get('user_hash')
+    
+    # Verifica se o usuário já tem um token válido
+    if user_id and token and validate_token(user_id, token):
+        # Redireciona para a página protegida
+        return redirect(url_for('protected'))
+    
+    if request.method == 'POST':
+        email = request.form['email']
+        senha = request.form['password']
+        date_time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        connection = sqlite3.connect("database.db")
+        cursor = connection.cursor()
+        
+        command = "SELECT * FROM users WHERE email = ? AND password = ?"
+        cursor.execute(command, (email, senha))
+        user_data = cursor.fetchone()
+        connection.close()
+        
+        if user_data:
+            session['logged_in'] = True
+            session['user_id'] = user_data[0]
+            token = generate_token()
+            session['user_hash'] = token
+            date_time_login = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            date_time_expiration = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+            
+            connection = sqlite3.connect("database.db")
+            cursor = connection.cursor()
+            cursor.execute("INSERT INTO login_sessions (user_id, data_hora_login, hash, data_hora_expiracao) VALUES (?, ?, ?, ?)", 
+                           (session['user_id'], date_time_login, token, date_time_expiration))
+            connection.commit()
+            connection.close()
+            
+            # return f"Usuário logado com sucesso. Seu ID é {user_data[0]}, data de login: {date_time_login}, data de expiração: {date_time_expiration}, hash: {token}"
+            return redirect(url_for('calc_page'))
+    return render_template('index.html', name='login')
 
-            command = f"SELECT * FROM users WHERE email = '{email}' AND password = '{senha}'"
-
-            try:
-                connection = sqlite3.connect("database.db")
-                cursor = connection.cursor()
-                user_data =  cursor.execute(command).fetchone()
-                print(user_data)
-                connection.close()
-            except Exception as e:
-                print(e)
-                user_data = None
-            if user_data or user_data is not None:
-                session['logged_in'] = True
-                session['user_id'] = user_data[0]
-                session['user_hash'] = hashlib.sha256(os.urandom(24)).hexdigest()
-                date_time_login = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                date_time_expiration = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-                connection = sqlite3.connect("database.db")
-                cursor = connection.cursor()
-                cursor.execute(f"INSERT INTO login_sessions (user_id, data_hora_login, hash, data_hora_expiracao) VALUES ({session['user_id']}, '{date_time_login}', '{session['user_hash']}', '{date_time_expiration}')")
-                connection.commit()
-                connection.close()
-                
-                return f"Usuário logado com sucesso. Seu ID é {user_data[0]}, data de login: {date_time_login}, data de expiração: {date_time_expiration}, hash: {session['user_hash']}"
-
-        return render_template('index.html', name='login')
+@app.route('/protected')
+def protected():
+    user_id = session.get('user_id')
+    token = session.get('user_hash')
+    if user_id and token and validate_token(user_id, token):
+        new_expiration = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        connection = sqlite3.connect("database.db")
+        cursor = connection.cursor()
+        cursor.execute("UPDATE login_sessions SET data_hora_expiracao = ? WHERE user_id = ? AND hash = ?", 
+                       (new_expiration, user_id, token))
+        connection.commit()
+        connection.close()
+        return "Acesso permitido. Sessão renovada."
+    else:
+        return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
