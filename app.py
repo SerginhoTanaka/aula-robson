@@ -115,7 +115,7 @@ def protected():
         connection.commit()
         connection.close()
         
-        return "Acesso permitido. Sessão renovada."
+        return redirect(url_for('calc_page'))
     else:
         return redirect(url_for('login'))
 
